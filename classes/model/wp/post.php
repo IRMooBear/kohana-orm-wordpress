@@ -15,11 +15,22 @@ class Model_WP_Post extends Model_WP
 		),
 		'terms' => array(
 			'model' => 'wp_term',
-			'through' => 'wp_term_relationship',
+			'through' => 'term_relationships',
 			'foreign_key' => 'object_id',
-			'far_key' => 'taxonomy_term_id',
+			'far_key' => 'term_taxonomy_id',
 		),
 	);
+	
+	public function slug($slug)
+	{
+		$slug = strtolower($slug);
+		$slug = str_replace('/',' ', $slug);
+		$slug = preg_replace('/([^[:alnum:][:space:]])/', '', $slug);
+		$slug = preg_replace('/([[:space:]]+)/',' ',trim($slug));
+		$slug = preg_replace('/([[:space:]])/','-',$slug);
+		
+		return $slug;
+	}
 
 	public function add_meta($key, $value)
 	{
@@ -46,20 +57,100 @@ class Model_WP_Post extends Model_WP
 		return $meta->saved();
 	}
 
-	public function add_term($term)
+	public function has_category($name)
 	{
-		$term = ORM::factory('wp_term',array('name' => $term));
+		return $this->has_taxonomy($name, 'category');
+	}
+	
+	public function has_tag($name)
+	{
+		return $this->has_taxonomy($name, 'post_tag');
+	}
+	
+	public function add_category($name, $order = 0)
+	{
+		return $this->add_taxonomy($name, 'category', $order);
+	}
+	
+	public function add_tag($name, $order = 0)
+	{
+		return $this->add_taxonomy($name, 'post_tag', $order);
+	}
+	
+	public function remove_category($name)
+	{
+		return $this->remove_taxonomy($name, 'category');
+	}
+	
+	public function remove_tag($name)
+	{
+		return $this->remove_taxonomy($name, 'post_tag');
+	}
+	
+	public function add_taxonomy($item, $type, $order = 0)
+	{
+		$term = ORM::factory('wp_term')
+			->where('name','=',$item)
+			->or_where('slug', '=', $item)
+			->find()
+		;
+		
+		$taxonomy = ORM::factory('wp_term_taxonomy')
+			->where('term_id','=', $term->pk())
+			->and_where('taxonomy','=', $type)
+			->find()
+		;
 
-		if($term->loaded())
+		if($taxonomy->loaded())
 		{
 			$relationship = ORM::factory('wp_term_relationship');
 			$relationship->object_id = $this->pk();
-			$relationship->term_taxonomy_id = $term->pk();
-			$relationship->term_order = 0;
+			$relationship->term_taxonomy_id = $taxonomy->pk();
+			$relationship->term_order = $order;
 			$relationship->save();
 
-			return $relationship->saved() ? true : false;
+			return $relationship->saved();
 		}
+		
+		return false;
+	}
+	
+	public function has_taxonomy($item, $type)
+	{
+		$term = ORM::factory('wp_term')
+			->where('name','=',$item)
+			->or_where('slug', '=', $item)
+			->find()
+		;
+		
+		$taxonomy = ORM::factory('wp_term_taxonomy')
+			->where('term_id','=', $term->pk())
+			->and_where('taxonomy','=', $type)
+			->find()
+		;
+		
+		return $this->has('terms', $taxonomy->pk());
+	}
+	
+	public function remove_taxonomy($item, $type)
+	{
+		if($this->has_taxonomy($item, $type))
+		{
+			$term = ORM::factory('wp_term')
+				->where('name','=',$item)
+				->or_where('slug', '=', $item)
+				->find()
+			;
+
+			$taxonomy = ORM::factory('wp_term_taxonomy')
+				->where('term_id','=', $term->pk())
+				->and_where('taxonomy','=', $type)
+				->find()
+			;
+			
+			return $this->remove('terms', $taxonomy->pk());
+		}
+		
 		return false;
 	}
 }
